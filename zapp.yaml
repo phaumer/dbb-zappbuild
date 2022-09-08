@@ -1,0 +1,34 @@
+name: dbb-zappbuild examples
+description: Sample for the MortgageApplication
+version: 2.1.1
+author:
+  name: IBM
+
+property-groups:
+  - name: MortgageApplicationCopybooks
+    language: cobol
+    type: local
+    syslib:
+      - "**/samples/MortgageApplication/copybook"
+  - name: MortgageApplicationCics
+    language: cobol
+    type: mvs
+    syslib:
+      - "DFH.V5R5M0.CICS.SDFHCOB"
+      - "PHAUMER.SAMPLE.BMS.COPY"
+
+profiles:
+  - name: MortgageApplicationBuild
+    type: dbb
+    settings:
+      command: "$DBB_HOME/bin/groovyz"
+      buildScriptPath: "${zopeneditor.userbuild.userSettings.dbbWorkspace}/dbb-zappbuild/build.groovy"
+      buildScriptArgs:
+        - "--userBuild"
+        - "--workspace ${zopeneditor.userbuild.userSettings.dbbWorkspace}"
+        - "--application samples/MortgageApplication"
+        - "--hlq ${zopeneditor.userbuild.userSettings.dbbHlq}"
+        - "--outDir ${zopeneditor.userbuild.userSettings.dbbLogDir}"
+        - "--dependencyFile ${dependencyFile}"
+      additionalDependencies:
+        - "samples/MortgageApplication/application-conf"
