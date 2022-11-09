@@ -1,34 +1,55 @@
+################################################################
+# LICENSED MATERIALS - PROPERTY OF IBM
+# "RESTRICTED MATERIALS OF IBM"
+# (C) COPYRIGHT IBM CORPORATION 2022. ALL RIGHTS RESERVED
+# US GOVERNMENT USERS RESTRICTED RIGHTS - USE, DUPLICATION,
+# OR DISCLOSURE RESTRICTED BY GSA ADP SCHEDULE
+# CONTRACT WITH IBM CORPORATION
+################################################################
+
+# User Settings to use for Wazi Sandbox
+#   "zopeneditor.userbuild.userSettings": {
+#    "dbbHlq": "IBMUSER.MORTAPP",
+#    "dbbLogDir": "/u/ibmuser/projects/logs",
+#    "dbbWorkspace": "/u/ibmuser/projects"
+#   }
+
 name: dbb-zappbuild examples
-description: Sample for the MortgageApplication
-version: 2.1.1
+description: Sample for building the MortgageApplication on a Wazi Sandbox
+version: 3.0.0
 author:
   name: IBM
 
-property-groups:
+propertyGroups:
   - name: MortgageApplicationCopybooks
     language: cobol
-    type: local
-    syslib:
-      - "**/samples/MortgageApplication/copybook"
-  - name: MortgageApplicationCics
-    language: cobol
-    type: mvs
-    syslib:
-      - "DFH.V5R5M0.CICS.SDFHCOB"
-      - "PHAUMER.SAMPLE.BMS.COPY"
+    libraries:
+      - name: syslib
+        type: local
+        locations:
+          - "**/samples/MortgageApplication/copybook"
+      - name: syslib
+        type: mvs
+        locations:
+         - "DFH560.CICS.SDFHCOB"
+         - "IBMUSER.MORTAPP.BMS.COPY"
 
 profiles:
   - name: MortgageApplicationBuild
     type: dbb
     settings:
-      command: "$DBB_HOME/bin/groovyz"
+      application: MortApp
+      command: "$DBB_HOME/bin/groovyz -DBB_PERSONAL_DAEMON"
       buildScriptPath: "${zopeneditor.userbuild.userSettings.dbbWorkspace}/dbb-zappbuild/build.groovy"
       buildScriptArgs:
         - "--userBuild"
         - "--workspace ${zopeneditor.userbuild.userSettings.dbbWorkspace}"
-        - "--application samples/MortgageApplication"
+        - "--application ${application}/samples/MortgageApplication"
         - "--hlq ${zopeneditor.userbuild.userSettings.dbbHlq}"
         - "--outDir ${zopeneditor.userbuild.userSettings.dbbLogDir}"
         - "--dependencyFile ${dependencyFile}"
       additionalDependencies:
         - "samples/MortgageApplication/application-conf"
+      logFilePatterns:
+        - "${buildFile.basename}.log"
+        - "BuildReport.*"
