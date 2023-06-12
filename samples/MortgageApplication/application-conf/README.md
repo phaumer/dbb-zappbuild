@@ -21,9 +21,7 @@ excludeFileList | Files to exclude when scanning or running full build.
 skipImpactCalculationList | Files for which the impact analysis should be skipped in impact build
 jobCard | JOBCARD for JCL execs
 resolveSubsystems | boolean flag to configure the SearchPathDependencyResolver to evaluate if resolved dependencies impact the file flags isCICS, isSQL, isDLI, isMQ when creating the LogicalFile
-impactResolutionRules | Comma separated list of resolution rule properties used for impact builds.  Sample resolution rule properties (in JSON format) are included below. ** deprecated ** Please consider moving to new SearchPathDepedencyAPI leveraging `impactSearch` configuration. 
 impactSearch | Impact finder resolution search configuration leveraging the SearchPathImpactFinder API. Sample configurations are inlcuded below, next to the previous rule definitions.
-
 
 
 ### file.properties
@@ -55,7 +53,6 @@ Application properties used by zAppBuild/language/Cobol.groovy
 Property | Description | Overridable
 --- | --- | ---
 cobol_fileBuildRank | Default Cobol program build rank. Used to sort Cobol build file sub-list. Leave empty. | true
-cobol_resolutionRules | Cobol dependency resolution rules used to create a Cobol dependency resolver.  Format is a JSON array of resolution rule property keys.  Resolution rule properties are defined in `application-conf/application.properties`. ** deprecated ** | true
 cobol_dependencySearch | Cobol dependencySearch configuration to configure the SearchPathDependencyResolver. Format is a concatenated string of searchPath configurations. Strings representing the SearchPaths defined in `application-conf/application.properties`. | true
 cobol_compilerVersion | Default Cobol compiler version. | true
 cobol_compileMaxRC | Default compile maximum RC allowed. | true
@@ -94,3 +91,11 @@ linkedit_deployTypeDLI | deployType for build output for build files with isDLI=
 linkedit_scanLoadModule | Flag indicating to scan the load module for link dependencies and store in the application's outputs collection. | true
 linkEdit_linkEditSyslibConcatenation | A comma-separated list of libraries to be concatenated in syslib during linkEdit step | true
 
+### languageConfigurationMapping.properties
+Sample Language Configuration mapping properties used by dbb-zappbuild/utilities/BuildUtilities.groovy.
+
+This contains the mapping of the files and their corresponding Language Configuration properties files residing in `zAppBuild/build-conf/language-conf` to override the default file properties.
+
+Example: The entry - `epsnbrvl.cbl=languageConfigProps01`, means the file properties of file `epsnbrvl.cbl` will be overridden by the properties mentioned in `dbb-zappbuild/build-conf/language-conf/languageConfigProps01.properties`
+
+See the [language configuration mapping documentation](../../../docs/FilePropertyManagement.md#language-configuration-mapping) for more details on how to enable and use language configuration mapping.

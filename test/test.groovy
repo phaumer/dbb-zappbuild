@@ -11,6 +11,9 @@ BuildProperties props = loadBuildProperties(args)
 // create a test branch to run under
 createTestBranch(props)
 
+// flag to control test process
+props.testsSucceeded = 'true'
+
 // run the test scripts
 try {
 	if (props.test_testOrder) {
@@ -30,6 +33,15 @@ try {
 finally {
 	// delete test branch
 	deleteTestBranch(props)
+	
+	// if error occurred signal process error
+	if (props.testsSucceeded.toBoolean() == false) {
+		println("*! Not all test scripts completed successfully. Please check console outputs. Send exit signal.")
+		System.exit(1)
+	} else {
+		println("* ZAPPBUILD TESTFRAMEWORK COMPLETED. All tests (${props.test_testOrder}) completed successfully.")
+	}
+	
 }
 // end script
 
@@ -90,9 +102,6 @@ def loadBuildProperties(String [] args) {
 	if (options.f) props.propFiles = options.f
 	if (options.o) props.outDir = options.o
 	
-	// load application test.properties file
-	props.load(new File("${getScriptDir()}/applications/${props.app}/test.properties"))
-	
 	// add some additional properties
 	props.testBranch = 'zAppBuildTesting'
 	props.zAppBuildDir = new File(getScriptDir()).getParent()
@@ -114,6 +123,10 @@ def loadBuildProperties(String [] args) {
 	props.appLocation = "${props.zAppBuildDir}/samples/${props.app}" as String
 	props.workspace = "${props.zAppBuildDir}/samples" as String
 
+	// load application test.properties file
+	props.load(new File("${getScriptDir()}/applications/${props.app}/test.properties"))
+
+	
 	// print properties
 	if (props.verbose) {
 		println "** Properties args and applications/${props.app}/test.properties"

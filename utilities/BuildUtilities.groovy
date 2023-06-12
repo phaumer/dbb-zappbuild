@@ -9,6 +9,9 @@ import groovy.json.JsonSlurper
 import com.ibm.dbb.build.DBBConstants.CopyMode
 import com.ibm.dbb.build.report.records.*
 import com.ibm.jzos.FileAttribute
+import java.nio.file.FileSystems
+import java.nio.file.Path
+import java.nio.file.PathMatcher
 import groovy.ant.*
 
 // define script properties
@@ -26,7 +29,7 @@ def assertBuildProperties(String requiredProps) {
 
 		buildProps.each { buildProp ->
 			buildProp = buildProp.trim()
-			assert props."$buildProp" : "*! Missing required build property '$buildProp'"
+			assert (props."$buildProp" || !(new PropertyMappings("$buildProp").getValues().isEmpty())) : "*! Missing required build property '$buildProp'"
 		}
 	}
 }
@@ -91,7 +94,7 @@ def getFileSet(String dir, boolean relativePaths, String includeFileList, String
  *  - DependencyResolver to resolve dependencies
  */
 
-def copySourceFiles(String buildFile, String srcPDS, String dependencyDatasetMapping, String dependenciesAlternativeLibraryNameMapping, Object dependencyResolver) {
+def copySourceFiles(String buildFile, String srcPDS, String dependencyDatasetMapping, String dependenciesAlternativeLibraryNameMapping, SearchPathDependencyResolver dependencyResolver) {
 	// only copy the build file once
 	if (!copiedFileCache.contains(buildFile)) {
 		copiedFileCache.add(buildFile)
@@ -115,8 +118,6 @@ def copySourceFiles(String buildFile, String srcPDS, String dependencyDatasetMap
 		String lname = CopyToPDS.createMemberName(buildFile)
 		String language = props.getFileProperty('dbb.DependencyScanner.languageHint', buildFile) ?: 'UNKN'
 		LogicalFile lfile = new LogicalFile(lname, buildFile, language, depFileData.isCICS, depFileData.isSQL, depFileData.isDLI)
-		// set logical file in the dependency resolver if using deprecated API
-		//dependencyResolver.setLogicalFile(lfile) 
 
 		// get list of dependencies from userBuildDependencyFile
 		List<String> dependencyPaths = depFileData.dependencies
@@ -158,9 +159,7 @@ def copySourceFiles(String buildFile, String srcPDS, String dependencyDatasetMap
 	else if (dependencyDatasetMapping && dependencyResolver) {
 		// resolve the logical dependencies to physical files to copy to data sets
 		
-		resolverUtils = loadScript(new File("ResolverUtilities.groovy"))
-		List<PhysicalDependency> physicalDependencies = resolverUtils.resolveDependencies(dependencyResolver, buildFile)
-		
+		List<PhysicalDependency> physicalDependencies = resolveDependencies(dependencyResolver, buildFile)
 
 		if (props.verbose) println "*** Physical dependencies for $buildFile:"
 
@@ -305,54 +304,45 @@ def updateBuildResult(Map args) {
 	}
 }
 
-/*
- * createDependencyResolver - Creates a dependency resolver using resolution rules declared
- * in a build or file property (json format).
+/**
+ * Method to create the logical file using SearchPathDependencyResolver
+ *
+ *  evaluates if it should resolve file flags for resolved dependencies
+ *
+ * @param spDependencyResolver
+ * @param buildFile
+ * @return logicalFile
  */
-// def createDependencyResolver(String buildFile, String rules) {
-// 	if (props.verbose) println "*** Creating dependency resolver for $buildFile with $rules rules"
 
-// 	// create a dependency resolver for the build file
-// 	DependencyResolver resolver = new DependencyResolver().file(buildFile)
-// 			.sourceDir(props.workspace)
+def createLogicalFile(SearchPathDependencyResolver spDependencyResolver, String buildFile) {
 	
-// 	// add scanner if userBuild Dep File not provided, or not a user build
-// 	if (!props.userBuildDependencyFile || !props.userBuild)
-// 		resolver.setScanner(getScanner(buildFile))
+	LogicalFile logicalFile
+	
+	if (props.resolveSubsystems && props.resolveSubsystems.toBoolean()) {
+		// include resolved dependencies to define file flags of logicalFile
+		logicalFile = spDependencyResolver.resolveSubsystems(buildFile,props.workspace)
+	}
+	else {
+		logicalFile = SearchPathDependencyResolver.getLogicalFile(buildFile,props.workspace)
+	}
 
-// 	// add resolution rules
-// 	if (rules)
-// 		resolver.setResolutionRules(parseResolutionRules(rules))
+	return logicalFile
 
-// 	return resolver
-// }
+}
 
-// def parseResolutionRules(String json) {
-// 	List<ResolutionRule> rules = new ArrayList<ResolutionRule>()
-// 	JsonSlurper slurper = new groovy.json.JsonSlurper()
-// 	List jsonRules = slurper.parseText(json)
-// 	if (jsonRules) {
-// 		jsonRules.each { jsonRule ->
-// 			ResolutionRule resolutionRule = new ResolutionRule()
-// 			resolutionRule.library(jsonRule.library)
-// 			resolutionRule.lname(jsonRule.lname)
-// 			resolutionRule.category(jsonRule.category)
-// 			if (jsonRule.searchPath) {
-// 				jsonRule.searchPath.each { jsonPath ->
-// 					DependencyPath dependencyPath = new DependencyPath()
-// 					dependencyPath.collection(jsonPath.collection)
-// 					dependencyPath.sourceDir(jsonPath.sourceDir)
-// 					dependencyPath.directory(jsonPath.directory)
-// 					resolutionRule.path(dependencyPath)
-// 				}
-// 			}
-// 			rules << resolutionRule
-// 		}
-// 	}
-// 	return rules
-// }
+/**
+ * Method to execute dependency resolution based on configured SearchPathDependencyResolver
+ * 
+ * @return resolved list of physical dependencies
+ */
 
-
+def resolveDependencies(SearchPathDependencyResolver dependencyResolver, String buildFile) {
+	if (props.verbose) {
+		println "*** Resolution rules for $buildFile:"
+		println dependencyResolver.getSearchPath()
+	}
+	return dependencyResolver.resolveDependencies(buildFile, props.workspace)
+}
 
 /*
  * isCICS - tests to see if the program is a CICS program. If the logical file is false, then
@@ -397,6 +387,44 @@ def isDLI(LogicalFile logicalFile) {
 	}
 
 	return isDLI
+}
+
+/*
+ * isMQ - tests to see if the program uses MQ. If the logical file is false, then
+ * check to see if there is a file property.
+ */
+def isMQ(LogicalFile logicalFile) {
+	boolean isMQ = logicalFile.isMQ()
+	if (!isMQ) {
+		String isMQFlag = props.getFileProperty('isMQ', logicalFile.getFile())
+		if (isMQFlag)
+			isMQ = isMQFlag.toBoolean()
+	}
+
+	return isMQ
+}
+
+/*
+ * getMqStubInstruction -
+ *  returns include defintion for mq sub program for link edit
+ */
+def getMqStubInstruction(LogicalFile logicalFile) {
+	String mqStubInstruction
+	
+	if (isMQ(logicalFile)) {
+		// https://www.ibm.com/docs/en/ibm-mq/9.3?topic=files-mq-zos-stub-programs
+		if (isCICS(logicalFile)) {
+			mqStubInstruction = "   INCLUDE SYSLIB(CSQCSTUB)\n"
+		} else if (isDLI(logicalFile)) {
+			mqStubInstruction = "   INCLUDE SYSLIB(CSQQSTUB)\n"
+		} else {
+			mqStubInstruction = "   INCLUDE SYSLIB(CSQBSTUB)\n"
+		}
+	} else {
+		println("*! (BuildUtilities.getMqStubInstruction) MQ file attribute for ${logicalFile.getFile()} is false.")	
+	}
+	
+	return mqStubInstruction
 }
 
 /*
@@ -513,6 +541,9 @@ def getLangPrefix(String scriptName){
 			break;
 		case "PSBgen.groovy":
 			langPrefix = 'psbgen'
+			break;
+		case "Transfer.groovy":
+			langPrefix = 'transfer'
 			break;
 		default:
 			if (props.verbose) println ("*** ! No language prefix defined for $scriptName.")
@@ -763,37 +794,65 @@ def getShortGitHash(String buildFile) {
 	return null
 }
 
-/*
- * Loading file level properties for all files on the buildList or list which is passed to this method.
+/**
+ * createPathMatcherPattern
+ * Generic method to build PathMatcher from a build property
  */
-def loadFileLevelPropertiesFromFile(List<String> buildList) {
 
-	buildList.each { String buildFile ->
-
-		// check for file level overwrite
-		loadFileLevelProperties = props.getFileProperty('loadFileLevelProperties', buildFile)
-		if (loadFileLevelProperties && loadFileLevelProperties.toBoolean()) {
-
-			String member = new File(buildFile).getName()
-			String propertyFilePath = props.getFileProperty('propertyFilePath', buildFile)
-			String propertyExtention = props.getFileProperty('propertyFileExtension', buildFile)
-			String propertyFile = getAbsolutePath(props.application) + "/${propertyFilePath}/${member}.${propertyExtention}"
-			File fileLevelPropFile = new File(propertyFile)
-
-			if (fileLevelPropFile.exists()) {
-				if (props.verbose) println "* Populating property file $propertyFile for $buildFile"
-				InputStream propertyFileIS = new FileInputStream(propertyFile)
-				Properties fileLevelProps = new Properties()
-				fileLevelProps.load(propertyFileIS)
-
-				fileLevelProps.entrySet().each { entry ->
-					if (props.verbose) println "* Adding file level pattern $entry.key = $entry.value for $buildFile"
-					props.addFilePattern(entry.key, entry.value, buildFile)
-				}
-			} else {
-				if (props.verbose) println "* No property file found for $buildFile. Build will take the defaults or already defined file properties."
-			}
+def createPathMatcherPattern(String property) {
+	List<PathMatcher> pathMatchers = new ArrayList<PathMatcher>()
+	if (property) {
+		property.split(',').each{ filePattern ->
+			if (!filePattern.startsWith('glob:') || !filePattern.startsWith('regex:'))
+				filePattern = "glob:$filePattern"
+			PathMatcher matcher = FileSystems.getDefault().getPathMatcher(filePattern)
+			pathMatchers.add(matcher)
 		}
 	}
+	return pathMatchers
 }
 
+/**
+ * matches
+ * Generic method to validate if a file is matching any pathmatchers  
+ * 
+ */
+def matches(String file, List<PathMatcher> pathMatchers) {
+	def result = pathMatchers.any { matcher ->
+		Path path = FileSystems.getDefault().getPath(file);
+		if ( matcher.matches(path) )
+		{
+			return true
+		}
+	}
+	return result
+}
+
+/**
+ * method to print the logicalFile attributes (CICS, SQL, DLI, MQ) of a scanned file 
+ * and indicating if an attribute is overridden through a property definition.
+ * 
+ * sample output:
+ * Program attributes: CICS=true, SQL=true*, DLI=false, MQ=false
+ * 
+ * additional notes:
+ * An suffixed asterisk (*) of the value for an attribute is indicating if a property definition 
+ * is overriding the value. When the values are identical, no asterisk is presented, even when 
+ * a property is setting the same value.
+ * 
+ * This is implementing 
+ * https://github.com/IBM/dbb-zappbuild/issues/339
+ *  
+*/
+
+def printLogicalFileAttributes(LogicalFile logicalFile) {
+	String cicsFlag = (logicalFile.isCICS() == isCICS(logicalFile)) ? "${logicalFile.isCICS()}" : "${isCICS(logicalFile)}*"
+	String sqlFlag = (logicalFile.isSQL() == isSQL(logicalFile)) ? "${logicalFile.isSQL()}" : "${isSQL(logicalFile)}*"
+	String dliFlag = (logicalFile.isDLI() == isDLI(logicalFile)) ? "${logicalFile.isDLI()}" : "${isDLI(logicalFile)}*"
+	String mqFlag = (logicalFile.isMQ() == isMQ(logicalFile)) ? "${logicalFile.isMQ()}" : "${isMQ(logicalFile)}*"
+	
+	println "Program attributes: CICS=$cicsFlag, SQL=$sqlFlag, DLI=$dliFlag, MQ=$mqFlag"
+	
+}
+	
+	
